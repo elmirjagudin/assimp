@@ -865,6 +865,62 @@ aiNode* ProcessSpatialStructure(aiNode* parent, const IfcProduct& el, Conversion
     conv.already_processed.erase(conv.already_processed.find(el.GetID()));
     return nd.release();
 }
+// ------------------------------------------------------------------------------------------------
+
+template<class T>
+void SetListOfMetaData(aiMetadata *data, unsigned int index, const std::string &name, T &list)
+{
+    std::stringstream ss;
+
+    ss << list[0];
+    for (size_t i = 1; i < list.size(); i += 1)
+    {
+        ss << " " << list[i];
+    }
+    data->Set(index, name, aiString(ss.str()));
+}
+
+// ------------------------------------------------------------------------------------------------
+void SetSiteMetaData(const DB& db, const IfcSite* site, aiNode* mRootNode)
+{
+    auto latitude = site->RefLatitude.Get();
+    printf("latitude %ld %ld %ld.%ld\n",
+           latitude[0], latitude[1], latitude[2], latitude[3]);
+
+    auto longitude = site->RefLongitude.Get();
+    printf("longitude %ld %ld %ld.%ld\n",
+           longitude[0], longitude[1], longitude[2], longitude[3]);
+
+    auto elevation = site->RefElevation.Get();
+    printf("elevation %lf\n", elevation);
+
+    auto placement = site->ObjectPlacement.Get()->To<IfcLocalPlacement>();
+    auto rp = placement.RelativePlacement->ResolveSelectPtr<IfcAxis2Placement3D>(db);
+
+    auto loc = rp->Location->ToPtr<IfcCartesianPoint>();
+    printf("loc %lf %lf %lf\n", loc->Coordinates[0], loc->Coordinates[1], loc->Coordinates[2]);
+
+    auto dir = rp->RefDirection.Get()->ToPtr<IfcDirection>();
+    auto axis = rp->Axis.Get()->ToPtr<IfcDirection>();
+    printf("dir %lf %lf %lf\n", dir->DirectionRatios[0], dir->DirectionRatios[1], dir->DirectionRatios[2]);
+    printf("axis %lf %lf %lf\n", axis->DirectionRatios[0], axis->DirectionRatios[1], axis->DirectionRatios[2]);
+
+    aiMetadata* data = new aiMetadata();
+    data->mNumProperties = 6;
+    data->mKeys = new aiString[data->mNumProperties]();
+    data->mValues = new aiMetadataEntry[data->mNumProperties]();
+
+    SetListOfMetaData(data, 0, "RefLatitude", latitude);
+    SetListOfMetaData(data, 1, "RefLongitude", longitude);
+    data->Set(2, "RefElevation", aiString(to_string(elevation)));
+    SetListOfMetaData(data, 3, "Location", loc->Coordinates);
+    SetListOfMetaData(data, 4, "Axis", axis->DirectionRatios);
+    SetListOfMetaData(data, 5, "RefDirection", dir->DirectionRatios);
+
+
+    mRootNode->mMetaData = data;
+
+}
 
 // ------------------------------------------------------------------------------------------------
 void ProcessSpatialStructures(ConversionData& conv)
@@ -909,6 +965,8 @@ void ProcessSpatialStructures(ConversionData& conv)
                         IFCImporter::LogDebug("selecting this spatial structure as root structure");
                         // got it, this is the primary site.
                         conv.out->mRootNode = ProcessSpatialStructure(NULL,*prod,conv,NULL);
+                        SetSiteMetaData(conv.db, lz->ToPtr<IfcSite>(), conv.out->mRootNode);
+
                         return;
                     }
                 }
